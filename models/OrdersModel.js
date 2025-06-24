@@ -1,17 +1,25 @@
 const mongoose = require('mongoose');
 
 const OrderSchema = new mongoose.Schema({
-  customerEmail: { type: String, required: true },
-  products: [
+  orderId: { type: String, unique: true, required: true }, // מזהה ייחודי להזמנה
+  email: { type: String, required: true },
+  userId: String,
+  fullName: String,
+  phone: String,
+  address: String,
+  total: { type: Number, required: true },
+  cartItems: [
     {
-      productId: mongoose.Schema.Types.ObjectId,
+      productId: String,
       name: String,
-      price: Number,
-      quantity: Number
-    }
+      quantity: Number,
+      finalPrice: Number,
+    },
   ],
-  totalAmount: { type: Number, required: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 module.exports = mongoose.model('Order', OrderSchema);

@@ -1,69 +1,39 @@
-const express = require("express");
-const {config} = require('../config/secret');
-const Stripe = require('stripe');
-const {} = require('../models/OrdersModel');
-const stripe = Stripe(config.stripeSecret);
+const express = require('express');
 const router = express.Router();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 router.post('/create-checkout', async (req, res) => {
-  const { cartItems } = req.body;
+  try {
+    const { cartItems, total, email } = req.body;
 
-  const line_items = cartItems.map((item) => ({
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(400).json({ error: 'פריטים חסרים או לא תקינים.' });
+    }
+
+const session = await stripe.checkout.sessions.create({
+  payment_method_types: ['card'],
+  line_items: cartItems.map(item => ({
     price_data: {
       currency: 'ils',
       product_data: {
         name: item.name,
       },
-      unit_amount: item.price * 100, // מחיר באגורות
+      unit_amount: Math.round(item.finalPrice * 100),
     },
     quantity: item.quantity,
-  }));
+  })),
+  mode: 'payment',
+  success_url: `http://localhost:5173/success`,
+  cancel_url: `http://localhost:5173/cancel`,
+  customer_email: email,
+});
 
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items,
-      mode: 'payment',
-      success_url: 'http://localhost:5173/success',
-      cancel_url: 'http://localhost:5173/cancel',
-    });
 
     res.json({ url: session.url });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error('שגיאה ביצירת session:', err.message);
+    res.status(500).json({ error: 'שגיאה בעת יצירת תשלום.' });
   }
 });
 
-router.post('/webhook', express.raw({ type: 'application/json' }),async (request, response) => {
-    const sig = request.headers['stripe-signature'];
-    let event;
-  
-    try {
-      event = stripe.webhooks.constructEvent(request.body, sig, config.endpointSecret);
-    } catch (err) {
-      console.error('⚠️ Webhook Error:', err.message);
-      return response.status(400).send(`Webhook Error: ${err.message}`);
-    }
-  
-    // טיפוס האירוע – תשלום הושלם
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-  
-      // כאן תוכל לשמור למסד הנתונים את ההזמנה:
-      const customerEmail = session.customer_details.email;
-      const totalAmount = session.amount_total / 100;
-  
-      console.log('💰 תשלום הצליח מ:', customerEmail, 'סכום:', totalAmount);
-      await OrderSchema.create({
-        customerEmail,
-        products: session.metadata.products ? JSON.parse(session.metadata.products) : [],
-        totalAmount
-      });
-  
-      // לדוגמה: שמור למסד הנתונים
-    }
-  
-    response.status(200).end();
-  });
-
-  module.exports = router;
+module.exports = router;
