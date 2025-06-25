@@ -1,143 +1,136 @@
-const express = require('express');
-const router = express.Router();
-const Order = require('../models/OrdersModel');
-const nodemailer = require('nodemailer');
+const express  = require("express");
+const router   = express.Router();
+const Order    = require("../models/OrdersModel");
+const nodemailer = require("nodemailer");
+const { protect }     = require("../middlewares/authMiddleware");
+const { verifyAdmin } = require("../middlewares/adminAuth");
+const { prepareItemsWithFinalPrice, calcTotal } = require("../utils/priceUtils");
 
-const generateOrderId = () => {
-  const timestamp = Date.now().toString(36);
-  const randomStr = Math.random().toString(36).substring(2, 8);
-  return `ORD-${timestamp}-${randomStr}`.toUpperCase();
-};
+/* עזר */
+const generateOrderId = () =>
+  `ORD-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`.toUpperCase();
 
-// שליחת מייל
 const sendOrderEmail = async (email, fullName, order) => {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, // מומלץ להשתמש בסיסמה לאפליקציה
-    },
+  if (!email) return;                       // אין נמען – לא שולחים
+  const tr = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   });
 
-  const itemsList = order.cartItems.map(item =>
-    `<li>${item.name} - כמות: ${item.quantity} - מחיר ליחידה: ₪${item.finalPrice}</li>`
-  ).join('');
+  const itemsHtml = order.cartItems
+    .map((i) => `<li>${i.name} – ${i.quantity} × ₪${i.finalPrice}</li>`)
+    .join("");
 
-  const mailOptions = {
+  await tr.sendMail({
     from: process.env.EMAIL_USER,
-    to: email,
-    subject: `פרטי הזמנה שלך - ${order.orderId}`,
+    to:   email,
+    subject: `הזמנתך – ${order.orderId}`,
     html: `
       <h3>שלום ${fullName},</h3>
-      <p>להלן פרטי ההזמנה שלך:</p>
-      <ul>${itemsList}</ul>
-      <p><strong>סה״כ לתשלום:</strong> ₪${order.total.toFixed(2)}</p>
+      <p>תודה שהזמנת מ-Yossi Shop.</p>
+      <ul>${itemsHtml}</ul>
+      <p><strong>סה״כ:</strong> ₪${order.total.toFixed(2)}</p>
       <p><strong>כתובת למשלוח:</strong> ${order.address}</p>
-      <p>תודה שקנית אצלנו!</p>
     `,
-  };
-
-  await transporter.sendMail(mailOptions);
+  });
 };
 
-// בדיקת הזמנה קיימת לפי שם או טלפון
-router.post('/check-existing', async (req, res) => {
-  const { fullName, phone } = req.body;
+/* בדיקה להזמנה קיימת */
+router.post("/check-existing", async (req, res) => {
+  const { phone } = req.body;
   try {
-    const existing = await Order.findOne({ $or: [{ fullName }, { phone }] }).sort({ createdAt: -1 });
-    if (existing) {
-      return res.json({ existingOrderId: existing._id });
-    }
-    res.json({});
-  } catch (err) {
-    console.error('שגיאה בבדיקת הזמנה קיימת:', err.message);
-    res.status(500).json({ error: 'שגיאה בבדיקה' });
-  }
+    const existing = await Order.findOne({ phone }).sort({ createdAt: -1 });
+    existing
+      ? res.json({ existingOrderId: existing._id })
+      : res.json({});
+  } catch (e) { res.status(500).json({ error: "שגיאה בבדיקה" }); }
 });
 
-// יצירת הזמנה או צירוף להזמנה קיימת
-router.post('/', async (req, res) => {
+/* יצירה / מיזוג */
+router.post("/", protect, async (req, res) => {
   try {
-    const { mergeWithOrderId, ...orderData } = req.body;
-    let savedOrder;
+    const { mergeWithOrderId, cartItems, phone, address } = req.body;
 
+    /* השלמת פרטי משתמש */
+    const base = {
+      fullName: req.user.fullName,
+      email:    req.user.email,
+      phone,
+      address,
+    };
+
+    const prepped = prepareItemsWithFinalPrice(cartItems);
+    const total   = calcTotal(prepped);
+
+    let saved;
     if (mergeWithOrderId) {
-      const existingOrder = await Order.findById(mergeWithOrderId);
-      if (!existingOrder) {
-        return res.status(404).json({ error: 'ההזמנה לצירוף לא נמצאה' });
-      }
+      /* מיזוג לעגלה קיימת */
+      const exist = await Order.findById(mergeWithOrderId);
+      if (!exist) return res.status(404).json({ message: "לא נמצאה הזמנה למיזוג" });
 
-      // איחוד פריטים
-      const itemMap = new Map();
-      [...existingOrder.cartItems, ...orderData.cartItems].forEach(item => {
-        const key = item.productId;
-        if (itemMap.has(key)) {
-          const existing = itemMap.get(key);
-          existing.quantity += item.quantity;
-        } else {
-          itemMap.set(key, { ...item });
-        }
+      /* חיבור פריטים */
+      const map = new Map();
+      [...exist.cartItems, ...prepped].forEach((i) => {
+        const k = i.productId;
+        if (map.has(k)) map.get(k).quantity += i.quantity;
+        else map.set(k, { ...i });
       });
 
-const updatedFields = {
-  cartItems: Array.from(itemMap.values()),
-  total: existingOrder.total + orderData.total,
-  email: orderData.email,
-  phone: orderData.phone,
-  fullName: orderData.fullName,
-  address: orderData.address,
-};
-
-savedOrder = await Order.findByIdAndUpdate(
-  mergeWithOrderId,
-  { $set: updatedFields },
-  { new: true }
-);
+      exist.cartItems = Array.from(map.values());
+      exist.total     = calcTotal(exist.cartItems);
+      await exist.save();
+      saved = exist;
     } else {
-      const newOrder = new Order({
-        ...orderData,
+      saved = await Order.create({
+        ...base,
+        cartItems: prepped,
+        total,
         orderId: generateOrderId(),
+        userId: req.user._id,
+        status: "ממתינה",
       });
-      savedOrder = await newOrder.save();
     }
 
-    // שליחת מייל
-    await sendOrderEmail(savedOrder.email, savedOrder.fullName, savedOrder);
-    res.status(201).json(savedOrder);
-  } catch (error) {
-    console.error('שגיאה בשמירת ההזמנה או שליחת מייל:', error.message);
-    res.status(500).json({ error: 'שגיאה בשמירה או שליחה', details: error.message });
+    await sendOrderEmail(saved.email, saved.fullName, saved);
+    res.status(201).json(saved);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "שגיאה בשמירת הזמנה" });
   }
 });
 
-// מחיקה
-router.delete('/:id', async (req, res) => {
-  try {
-    await Order.findByIdAndDelete(req.params.id);
-    res.json({ message: 'ההזמנה נמחקה' });
-  } catch (err) {
-    res.status(500).json({ error: 'שגיאה במחיקה' });
-  }
+/* שינוי סטטוס – בעל ההזמנה */
+router.put("/status/:id", protect, async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ message: "לא נמצא" });
+  if (!order.userId.equals(req.user._id))
+    return res.status(403).json({ message: "אין הרשאה" });
+
+  order.status = req.body.status;
+  await order.save();
+  res.json(order);
 });
 
-// עדכון
-router.put('/:id', async (req, res) => {
-  try {
-    const updatedOrder = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updatedOrder);
-  } catch (err) {
-    res.status(500).json({ error: 'שגיאה בעדכון' });
-  }
+/* הזמנות המשתמש */
+router.get("/my-orders", protect, async (req, res) => {
+  const orders = await Order.find({ userId: req.user._id }).sort({ createdAt: -1 });
+  res.json(orders);
 });
 
-// קבלת כל ההזמנות
-router.get('/', async (req, res) => {
-  try {
-    const orders = await Order.find().sort({ createdAt: -1 });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: 'שגיאה בקבלת הזמנות' });
-  }
+/* ----- ניהול (Admin) ----- */
+router.get("/", verifyAdmin, async (_req, res) => {
+  const orders = await Order.find().sort({ createdAt: -1 });
+  res.json(orders);
+});
+
+router.put("/:id", verifyAdmin, async (req, res) => {
+  const updated = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json(updated);
+});
+
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  await Order.findByIdAndDelete(req.params.id);
+  res.json({ message: "נמחק" });
 });
 
 module.exports = router;
