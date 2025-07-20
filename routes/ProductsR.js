@@ -16,12 +16,20 @@ router.get("/", async (req, res) => {
 // Add a new product
 router.post("/add", async (req, res) => {
   try {
-    const newProduct = new ProductSchema(req.body);
+    const body = { ...req.body };
+
+    /* ---- Normalize promotion.type ---- */
+    if (!body.onSale || !body.promotion?.type) {
+      delete body.promotion;        // מסיר לגמרי אם ריק
+      body.discountPercent = 0;
+    }
+
+    const newProduct = new ProductSchema(body);
     await newProduct.save();
     res.status(201).json({ message: "המוצר נוסף בהצלחה!", product: newProduct });
-  } catch (error) {
-    console.error("שגיאה ביצירת המוצר:", error);
-    res.status(500).json({ error: "שגיאה בשרת" });
+  } catch (err) {
+    console.error("שגיאה ביצירת המוצר:", err);
+    res.status(500).json({ error: "שגיאה בשרת", details: err.message });
   }
 });
 
@@ -85,32 +93,27 @@ router.post("/rate/:id", async (req, res) => {
     const { id } = req.params;
     const { rating } = req.body;
 
-    // בדיקה שהדירוג תקין
-    if (typeof rating !== "number" || rating < 1 || rating > 5) {
-      return res.status(400).json({ error: "דירוג לא תקין. יש לשלוח מספר בין 1 ל-5." });
-    }
+    /* אימות מזהה ומספר כוכבים */
+    if (!id.match(/^[0-9a-fA-F]{24}$/))
+      return res.status(400).json({ message: "מזהה מוצר לא תקף" });
+    if (![1, 2, 3, 4, 5].includes(rating))
+      return res.status(400).json({ message: "דירוג חייב להיות 1-5" });
 
     const product = await ProductSchema.findById(id);
-    if (!product) {
-      return res.status(404).json({ message: "המוצר לא נמצא" });
-    }
+    if (!product) return res.status(404).json({ message: "מוצר לא נמצא" });
 
-    // חישוב ממוצע חדש
-    const totalRating = (product.rating || 0) * (product.numRatings || 0);
-    const newNumRatings = (product.numRatings || 0) + 1;
-    const newAverageRating = (totalRating + rating) / newNumRatings;
-
-    product.rating = Math.round(newAverageRating * 10) / 10; // עיגול ל-1 ספרה אחרי הנקודה
-    product.numRatings = newNumRatings;
-
+    const total = product.rating * product.numRatings;
+    product.numRatings += 1;
+    product.rating = Math.round(((total + rating) / product.numRatings) * 10) / 10;
     await product.save();
 
-    res.status(200).json({ message: "הדירוג עודכן בהצלחה", rating: product.rating, numRatings: product.numRatings });
-  } catch (error) {
-    console.error("שגיאה בעדכון דירוג:", error);
-    res.status(500).json({ error: "שגיאה בשרת" });
+    res.json({ rating: product.rating, numRatings: product.numRatings });
+  } catch (e) {
+    console.error("שגיאה בעדכון דירוג:", e);
+    res.status(500).json({ message: "שגיאה בשרת" });
   }
 });
+
 
 router.get("/ratings", async (req, res) => {
   try {
@@ -129,6 +132,25 @@ router.get("/ratings", async (req, res) => {
     console.error("שגיאה בקבלת דירוגים:", error);
     res.status(500).json({ error: "שגיאה בשרת" });
   }
+});
+
+router.get("/top-rated", async (_req, res) => {
+  const list = await ProductSchema.aggregate([
+    {
+      $addFields: {
+        ratingSum: { $multiply: ["$rating", "$numRatings"] },
+      },
+    },
+    { $sort: { ratingSum: -1 } },
+    { $limit: 20 },
+  ]);
+  res.json(list);
+});
+
+/* --- מוצרים נמכרים ביותר --- */
+router.get("/top-sold", async (_req, res) => {
+  const list = await ProductSchema.find().sort({ sold: -1 }).limit(20);
+  res.json(list);
 });
 
 

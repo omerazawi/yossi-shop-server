@@ -10,8 +10,9 @@ const { prepareItemsWithFinalPrice, calcTotal } = require("../utils/priceUtils")
 const generateOrderId = () =>
   `ORD-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`.toUpperCase();
 
+/* ───────── שליחת מייל ───────── */
 const sendOrderEmail = async (email, fullName, order) => {
-  if (!email) return;                       // אין נמען – לא שולחים
+  if (!email) return;
   const tr = nodemailer.createTransport({
     service: "gmail",
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
@@ -30,7 +31,12 @@ const sendOrderEmail = async (email, fullName, order) => {
       <p>תודה שהזמנת מ-Yossi Shop.</p>
       <ul>${itemsHtml}</ul>
       <p><strong>סה״כ:</strong> ₪${order.total.toFixed(2)}</p>
-      <p><strong>כתובת למשלוח:</strong> ${order.address}</p>
+      <p><strong>שיטת אספקה:</strong> ${order.deliveryMethod}</p>
+      ${
+        order.deliveryMethod === "משלוח"
+          ? `<p><strong>כתובת למשלוח:</strong> ${order.address}</p>`
+          : "<p>נעדכן אותך כשההזמנה מוכנה לאיסוף.</p>"
+      }
     `,
   });
 };
@@ -40,10 +46,71 @@ router.post("/check-existing", async (req, res) => {
   const { phone } = req.body;
   try {
     const existing = await Order.findOne({ phone }).sort({ createdAt: -1 });
-    existing
-      ? res.json({ existingOrderId: existing._id })
-      : res.json({});
+    existing ? res.json({ existingOrderId: existing._id }) : res.json({});
   } catch (e) { res.status(500).json({ error: "שגיאה בבדיקה" }); }
+});
+
+/* יצירה / מיזוג */
+router.post("/", protect, async (req, res) => {
+  try {
+    const {
+      mergeWithOrderId,
+      cartItems,
+      phone,
+      address = "",
+      deliveryMethod = "משלוח",
+    } = req.body;
+
+    /* השלמת פרטי משתמש */
+    const base = {
+      fullName: req.user.fullName,
+      email:    req.user.email,
+      phone,
+      address,
+      deliveryMethod,
+    };
+
+    const prepped = prepareItemsWithFinalPrice(cartItems);
+    const total   = calcTotal(prepped);
+
+    let saved;
+    if (mergeWithOrderId) {
+      /* מיזוג להזמנה קיימת */
+      const exist = await Order.findById(mergeWithOrderId);
+      if (!exist) return res.status(404).json({ message: "לא נמצאה הזמנה למיזוג" });
+
+      /* חיבור פריטים */
+      const map = new Map();
+      [...exist.cartItems, ...prepped].forEach((i) => {
+        const k = i.productId;
+        if (map.has(k)) map.get(k).quantity += i.quantity;
+        else map.set(k, { ...i });
+      });
+
+      exist.cartItems      = Array.from(map.values());
+      exist.total          = calcTotal(exist.cartItems);
+      exist.phone          = phone;
+      exist.address        = address;
+      exist.deliveryMethod = deliveryMethod;
+      await exist.save();
+      saved = exist;
+    } else {
+      saved = await Order.create({
+        ...base,
+        cartItems: prepped,
+        total,
+        orderId: generateOrderId(),
+        userId: req.user._id,
+        status: "ממתינה",
+      });
+    }
+
+    await sendOrderEmail(saved.email, saved.fullName, saved);
+    res.status(201).json(saved);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "שגיאה בשמירת הזמנה" });
+  }
 });
 
 /* יצירה / מיזוג */

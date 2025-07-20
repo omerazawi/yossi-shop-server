@@ -6,14 +6,27 @@ const OrderSchema = new mongoose.Schema({
   fullName:   { type: String, required: true },
   email:      { type: String, required: true },
   phone:      { type: String, required: true },
-  address:    { type: String, required: true },
 
-  cartItems:  { type: Array,  required: true },
-  total:      { type: Number, required: true },
+  /* — שיטת אספקה — */
+  deliveryMethod: {
+    type: String,
+    enum: ["משלוח", "איסוף עצמי"],
+    required: true,
+    default: "משלוח",
+  },
+
+  /* כתובת חובה רק אם נבחרה אפשרות משלוח */
+  address: {
+    type: String,
+    required() { return this.deliveryMethod === "משלוח"; },
+  },
+
+  cartItems: { type: Array,  required: true },
+  total:     { type: Number, required: true },
 
   status: {
     type: String,
-    enum: ["ממתינה", "מחכה למשלוח", "נשלחה","בוצעה בהצלחה", "בוטלה"],
+    enum: ["ממתינה", "מחכה למשלוח", "נשלחה", "בוצעה בהצלחה", "בוטלה"],
     default: "ממתינה",
   },
 
