@@ -100,8 +100,8 @@ router.post("/create-checkout", protect, async (req, res) => {
         },
         quantity: i.quantity,
       })),
-      success_url: "http://localhost:5173/success?session_id={CHECKOUT_SESSION_ID}",
-      cancel_url: "http://localhost:5173/cancel",
+      success_url: "https://yossi-shop.netlify.app/success?session_id={CHECKOUT_SESSION_ID}",
+      cancel_url: "https://yossi-shop.netlify.app/cancel",
       metadata: { orderId: order._id.toString() },
     });
 

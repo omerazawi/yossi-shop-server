@@ -58,7 +58,7 @@ router.post("/forgot-password", async (req, res) => {
     if (!user) return res.status(404).json({ message: "משתמש לא נמצא" });
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "10m" });
-    const resetUrl = `http://localhost:5173/reset-password/${token}`; // כתובת צד לקוח
+    const resetUrl = `https://yossi-shop.netlify.app/reset-password/${token}`; // כתובת צד לקוח
 
     await sendResetEmail(user.email, user.fullName, resetUrl);
     res.json({ message: "קישור איפוס נשלח לאימייל שלך" });
