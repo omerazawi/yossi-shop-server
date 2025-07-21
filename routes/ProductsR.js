@@ -64,28 +64,24 @@ router.post("/delete-multiple", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const productData = req.body;
+    const updates = req.body;
 
-    // חישוב מחיר מבצע בצד שרת
-    if (productData.onSale && productData.discountPercent) {
-      const discountAmount = (productData.price * productData.discountPercent) / 100;
-      productData.salePrice = Math.round((productData.price - discountAmount) * 100) / 100;
-    } else {
-      productData.salePrice = undefined;
-    }
+    const product = await ProductSchema.findById(id);
+    if (!product) return res.status(404).json({ message: "המוצר לא נמצא" });
 
-    const updatedProduct = await ProductSchema.findByIdAndUpdate(id, productData, { new: true });
+    // עדכון שדות מהממשק
+    Object.assign(product, updates);
 
-    if (!updatedProduct) {
-      return res.status(404).json({ message: "המוצר לא נמצא" });
-    }
+    // שמירה – תפעיל גם את pre("save") שמחשב salePrice
+    await product.save();
 
-    res.status(200).json({ message: "המוצר עודכן בהצלחה", product: updatedProduct });
+    res.status(200).json({ message: "המוצר עודכן בהצלחה", product });
   } catch (error) {
     console.error("שגיאה בעדכון המוצר:", error);
-    res.status(500).json({ error: "שגיאה בשרת" });
+    res.status(500).json({ error: "שגיאה בשרת", details: error.message });
   }
 });
+
 
 // דירוג מוצר
 router.post("/rate/:id", async (req, res) => {
