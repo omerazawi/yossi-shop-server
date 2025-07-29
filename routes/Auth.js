@@ -5,7 +5,7 @@ const { protect } = require("../middlewares/authMiddleware");
 const router = express.Router();
 
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET);
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "30d" });
 };
 
 // הרשמה
