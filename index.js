@@ -10,9 +10,9 @@ const { routesInit } = require("./routes/config_routes");
 
 const app = express();
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  origin: 'https://yossi-shop.netlify.app', // או '*', אם אתה רוצה לאפשר לכולם
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
 }));
 app.options("*", cors());
 

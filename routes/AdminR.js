@@ -46,16 +46,25 @@ router.post("/login", async (req, res) => {
 
 /* ────────────────  עדכון פרטי-מנהל  ──────────────── */
 router.put("/update", verifyToken, async (req, res) => {
-  const { newUsername, newPassword } = req.body;
-  try {
-    const hash = await bcrypt.hash(newPassword, 10);
-    await Admin.findByIdAndUpdate(req.adminId,
-      { username: newUsername, password: hash },
-      { new: true }
-    );
+  const { currentPassword, newUsername, newPassword } = req.body;
 
-    const updated = await Admin.findById(req.adminId);
-    res.json({ token: genToken(updated) });   // מחזירים טוקן חדש
+  try {
+    const admin = await Admin.findById(req.adminId);
+    if (!admin) return res.status(404).json({ message: "מנהל לא נמצא" });
+
+    const ok = await bcrypt.compare(currentPassword, admin.password);
+    if (!ok) return res.status(401).json({ message: "סיסמה נוכחית שגויה" });
+
+    const updateData = {};
+    if (newUsername) updateData.username = newUsername;
+    if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
+
+    if (!newUsername && !newPassword)
+      return res.status(400).json({ message: "לא נבחרו פרטים לעדכון" });
+
+    await Admin.findByIdAndUpdate(req.adminId, updateData);
+    res.json({ message: "הפרטים עודכנו בהצלחה" });
+
   } catch (e) {
     res.status(500).json({ message: "שגיאה בעדכון", error: e.message });
   }
