@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt      = require("jsonwebtoken");
 const Admin    = require("../models/AdminModel");
 const { config } = require("../config/secret");
+const { verifyAdmin } = require("../middlewares/adminAuth");
 const router   = express.Router();
 
 /* helper – יוצר JWT ל-30 יום */
@@ -45,7 +46,7 @@ router.post("/login", async (req, res) => {
 });
 
 /* ────────────────  עדכון פרטי-מנהל  ──────────────── */
-router.put("/update", verifyToken, async (req, res) => {
+router.put("/update", verifyAdmin, async (req, res) => {
   const { currentPassword, newUsername, newPassword } = req.body;
 
   try {
