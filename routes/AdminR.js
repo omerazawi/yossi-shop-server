@@ -14,7 +14,7 @@ const genToken = ({ _id, username }) =>
     expiresIn: "30d",
   });
 
-/* ───────────── התחברות ───────────── */
+/* ───── התחברות ───── */
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
@@ -28,14 +28,12 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "שם משתמש או סיסמה שגויים" });
 
     res.json({ token: genToken(admin) });
-  } catch (e) {
-    res
-      .status(500)
-      .json({ message: "שגיאה בשרת", error: e.message });
+  } catch (err) {
+    res.status(500).json({ message: "שגיאה בשרת", error: err.message });
   }
 });
 
-/* ───────────── עדכון פרטי מנהל ───────────── */
+/* ───── עדכון פרטים ───── */
 router.put("/update", verifyAdmin, async (req, res) => {
   const { currentPassword, newUsername, newPassword } = req.body;
   const admin = req.admin;
@@ -57,10 +55,8 @@ router.put("/update", verifyAdmin, async (req, res) => {
 
     await Admin.findByIdAndUpdate(admin._id, updateData);
     res.json({ message: "הפרטים עודכנו בהצלחה" });
-  } catch (e) {
-    res
-      .status(500)
-      .json({ message: "שגיאה בעדכון", error: e.message });
+  } catch (err) {
+    res.status(500).json({ message: "שגיאה בעדכון", error: err.message });
   }
 });
 
