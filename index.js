@@ -9,8 +9,20 @@ const paymentRoutes = require("./routes/Payment"); // לוודא שזה הנתי
 const { routesInit } = require("./routes/config_routes");
 
 const app = express();
+const allowedOrigins = [
+  'https://yossi-shop.netlify.app',
+  'http://localhost:5174',
+];
+
 app.use(cors({
-  origin: 'https://yossi-shop.netlify.app', // או '*', אם אתה רוצה לאפשר לכולם
+  origin: function (origin, callback) {
+    // מאפשר גם בקשות שלא מגיעות מהדפדפן (למשל curl או postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
