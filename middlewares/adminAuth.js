@@ -9,7 +9,7 @@ const verifyAdmin = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
-    const admin   = await Admin.findById(decoded.id).select("-password");
+    const admin   = await Admin.findById(decoded.id || decoded.userId);
     if (!admin) return res.status(401).json({ message: "Admin לא קיים" });
 
     req.admin = admin;
