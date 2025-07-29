@@ -1,4 +1,4 @@
-const jwt   = require("jsonwebtoken");
+const jwt = require("jsonwebtoken");
 const Admin = require("../models/AdminModel");
 const { config } = require("../config/secret");
 
@@ -9,12 +9,19 @@ const verifyAdmin = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
-    const admin   = await Admin.findById(decoded.id || decoded.userId);
+
+    // אופציה לאחוריות לטוקנים ישנים
+    const adminId = decoded.id || decoded.userId;
+
+    if (!adminId) return res.status(403).json({ message: "טוקן לא תקף" });
+
+    const admin = await Admin.findById(adminId);
     if (!admin) return res.status(401).json({ message: "Admin לא קיים" });
 
     req.admin = admin;
     next();
-  } catch {
+  } catch (err) {
+    console.error("❌ JWT Error:", err.message);
     res.status(403).json({ message: "טוקן מנהל לא תקף" });
   }
 };
