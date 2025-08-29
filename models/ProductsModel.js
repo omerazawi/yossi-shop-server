@@ -1,7 +1,7 @@
+// server/models/ProductsModel.js
 const mongoose = require("mongoose");
 
 const ProductSchema = new mongoose.Schema({
-  /* --- שדות בסיס --- */
   name:        { type: String, required: true },
   images:      [{ type: String, required: true }],
   description: { type: String, required: true },
@@ -13,41 +13,58 @@ const ProductSchema = new mongoose.Schema({
   sold:        { type: Number, default: 0 },
   color:       { type: String },
 
-  /* --- דירוג --- */
   rating:     { type: Number, default: 0 },
   numRatings: { type: Number, default: 0 },
 
-  /* --- מבצע --- */
   onSale:          { type: Boolean, default: false },
   discountPercent: { type: Number, default: 0 },
-  salePrice:       { type: Number },
+  salePrice:       { type: Number }, // לשימוש רק באחוזי הנחה
 
   promotion: {
     type: {
       type: String,
-      enum: ["percentage", "bundle", "multiToOne"], // ⬅️ בלי מחרוזת ריקה
-      required: false,                              // ⬅️ לא חובה
+      enum: ["percentage", "bundle", "multiToOne"],
+      required: false,
     },
-    bundleQuantity:     Number,
-    bundlePrice:        Number,
-    multiToOneQuantity: Number,
+    bundleQuantity:     Number, // לדוגמה: 3
+    bundlePrice:        Number, // לדוגמה: 30
+    multiToOneQuantity: Number, // לדוגמה: 3 (3 במחיר 1)
   },
 });
 
-/* מחשב salePrice לפני save */
+/* helper */
+function computeSalePriceForPercentage({ price, onSale, discountPercent, promotion }) {
+  const isPercentage = onSale && promotion?.type === "percentage" && Number(discountPercent) > 0;
+  if (!isPercentage) return undefined;
+  const p = Number(price) || 0;
+  const d = Number(discountPercent) || 0;
+  return Math.round((p * (1 - d / 100)) * 100) / 100;
+}
+
+/* שמירה – מחשב salePrice רק לאחוזי הנחה */
 ProductSchema.pre("save", function (next) {
-  if (this.onSale) {
-    if (this.discountPercent > 0) {
-      this.salePrice =
-        this.price - this.price * (this.discountPercent / 100);
-    } else if (this.promotion?.type === "bundle") {
-      this.salePrice = this.promotion.bundlePrice;
-    } else {
-      this.salePrice = undefined;
-    }
-  } else {
-    this.salePrice = undefined;
-  }
+  this.salePrice = computeSalePriceForPercentage(this);
+  next();
+});
+
+/* עדכון findOneAndUpdate – מסנכרן salePrice */
+ProductSchema.pre("findOneAndUpdate", function (next) {
+  const update = this.getUpdate() || {};
+  // מאחדים $set אם יש
+  const $set = update.$set || {};
+  const merged = { ...update, ...$set };
+
+  const salePrice = computeSalePriceForPercentage({
+    price: merged.price,
+    onSale: merged.onSale,
+    discountPercent: merged.discountPercent,
+    promotion: merged.promotion,
+  });
+
+  if (update.$set) update.$set.salePrice = salePrice;
+  else update.salePrice = salePrice;
+
+  this.setUpdate(update);
   next();
 });
 
