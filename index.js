@@ -14,8 +14,6 @@ const app = express();
 const allowedOrigins = [
   "https://yossi-shop.netlify.app",
   "https://yossi-admin.netlify.app",
-  "http://localhost:5173",
-  "http://localhost:5174",
 ];
 
 const corsOptions = {
