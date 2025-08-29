@@ -12,8 +12,8 @@ const app = express();
 
 // CORS - כולל OPTIONS עם הגדרות זהות
 const allowedOrigins = [
-  "https://yossi-shop.netlify.app",
-  "https://yossi-admin.netlify.app",
+  "https://sweet-market.netlify.app",
+  "https://sweet-market-admin.netlify.app",
 ];
 
 const corsOptions = {
